@@ -1,0 +1,99 @@
+name: Android CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  build:
+    name: Build debug APKs
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: set up JDK 11
+        uses: actions/setup-java@v3
+        with:
+          java-version: "11"
+          distribution: "temurin"
+          cache: gradle
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Build debug APKs
+        run: ./gradlew --stacktrace assembleDebug assembleDebugAndroidTest
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v3
+        with:
+          name: app-debug
+          path: app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Upload debug test APK
+        uses: actions/upload-artifact@v3
+        with:
+          name: app-debug-androidTest
+          path: app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+
+  unit-tests:
+    name: Run unit tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: set up JDK 11
+        uses: actions/setup-java@v3
+        with:
+          java-version: "11"
+          distribution: "temurin"
+          cache: gradle
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Build and run unit tests
+        run: ./gradlew --stacktrace check
+
+  device-tests:
+    name: Run device tests
+    needs: build
+    runs-on: ubuntu-latest
+    env:
+      HAVE_FIREBASE_KEY: ${{ secrets.FIREBASE_KEY != '' }}
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: actions/download-artifact@v3
+        if: ${{ env.HAVE_FIREBASE_KEY == 'true' }}
+        with:
+          name: app-debug
+
+      - uses: actions/download-artifact@v3
+        if: ${{ env.HAVE_FIREBASE_KEY == 'true' }}
+        with:
+          name: app-debug-androidTest
+
+      - id: auth
+        uses: google-github-actions/auth@v0
+        if: ${{ env.HAVE_FIREBASE_KEY == 'true' }}
+        with:
+          credentials_json: "${{ secrets.FIREBASE_KEY }}"
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v0
+        if: ${{ env.HAVE_FIREBASE_KEY == 'true' }}
+        with:
+          project_id: ndk-app-template
+
+      - name: Run instrumentation tests in Firebase test lab
+        if: ${{ env.HAVE_FIREBASE_KEY == 'true' }}
+        run:
+          gcloud firebase test android run --type instrumentation --app
+          app-debug.apk --test app-debug-androidTest.apk --device
+          model=oriole,version=33,locale=en,orientation=portrait

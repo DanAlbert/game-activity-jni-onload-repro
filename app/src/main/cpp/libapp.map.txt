@@ -1,0 +1,9 @@
+LIBAPP {
+  global:
+    JNI_OnLoad;
+    # This GameActivity implementation detail is leaked to consumers. This
+    # should not be required.
+    # Java_com_google_androidgamesdk_GameActivity_initializeNativeCode;
+  local:
+    *;
+};
